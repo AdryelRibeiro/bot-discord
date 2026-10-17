@@ -1,0 +1,19 @@
+{
+  "name": "prime-store-bot",
+  "version": "2.0.0",
+  "description": "Bot completo de Vendas, Tickets, Gestão e Automação estilo Prime Store / zenSallers para Discord (24/7 Ready)",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.17.0",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1"
+  }
+}
