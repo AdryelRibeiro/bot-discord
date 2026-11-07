@@ -201,6 +201,30 @@ async function handleTicketInteraction(interaction, client) {
     const [action, channelId] = customId.split(':');
     const ticket = db.tickets.active[channelId || interaction.channelId];
 
+    if (action === 'tkt_close_all_confirm') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: 'Apenas administradores podem fechar todos os tickets.', ephemeral: true });
+      }
+      await interaction.deferReply({ ephemeral: true });
+
+      const activeList = Object.values(db.tickets.active || {});
+      let closedCount = 0;
+      for (const t of activeList) {
+        try {
+          const ch = await client.channels.fetch(t.channelId).catch(() => null);
+          if (ch) {
+            await ch.delete('Fechamento em massa de tickets').catch(() => null);
+          }
+          delete db.tickets.active[t.channelId];
+          closedCount++;
+        } catch {
+          //
+        }
+      }
+      saveDB();
+      return interaction.editReply({ content: `✓ Foram encerrados com sucesso **${closedCount}** tickets ativos!` });
+    }
+
     if (action === 'tkt_claim') {
       if (ticket) {
         ticket.claimedBy = interaction.user.id;

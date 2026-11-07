@@ -694,6 +694,116 @@ async function handleStoreInteraction(interaction, client) {
     return interaction.update(buildCartView(cart, db));
   }
 
+  // 3. Adicionar Saldo via PIX (Painel Público)
+  if (interaction.isButton() && customId === 'public_add_balance_btn') {
+    const modal = new ModalBuilder()
+      .setCustomId('modal_public_add_balance')
+      .setTitle('Recarregar Saldo via PIX')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('amount')
+            .setLabel('Valor a Adicionar (R$)')
+            .setPlaceholder('Ex: 10.00')
+            .setRequired(true)
+            .setStyle(TextInputStyle.Short)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_public_add_balance') {
+    const rawVal = interaction.fields.getTextInputValue('amount').replace(',', '.').trim();
+    const amount = parseFloat(rawVal);
+    if (isNaN(amount) || amount <= 0) {
+      return interaction.reply({ content: 'Por favor, insira um valor numérico válido (ex: 15.00).', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    const charge = await createPaymentCharge(amount, `Recarga de Saldo - ${interaction.user.username}`, db);
+
+    const embed = new EmbedBuilder()
+      .setColor('#22C55E')
+      .setTitle('💰 Recarga de Saldo via PIX')
+      .setDescription(
+        `Realize o pagamento de **${formatBRL(amount)}** para adicionar o saldo à sua carteira.\n\n` +
+        `▪ **Chave / Código:** Copie o código abaixo no seu banco.\n` +
+        `\`\`\`\n${charge.pixCopiaECola}\n\`\`\``
+      )
+      .setImage(charge.qrCodeUrl)
+      .setFooter({ text: `${db.config.storeName} • Pagamento Seguro` });
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`wallet_copy_pix:${charge.chargeId || 'custom'}`).setLabel('Copia e Cola').setStyle(ButtonStyle.Primary)
+    );
+
+    return interaction.editReply({ embeds: [embed], components: [row] });
+  }
+
+  if (interaction.isButton() && customId.startsWith('wallet_copy_pix:')) {
+    return interaction.reply({
+      content: `Copie a chave/código PIX:\n\`\`\`\n${db.config.bank?.pixKey || 'Chave não configurada'}\n\`\`\``,
+      ephemeral: true
+    });
+  }
+
+  // 4. Solicitação de Estoque de Membros (Painel Público)
+  if (interaction.isButton() && customId === 'public_request_stock_btn') {
+    const modal = new ModalBuilder()
+      .setCustomId('modal_public_request_stock')
+      .setTitle('Solicitar Estoque')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('product_name')
+            .setLabel('Qual produto ou plano você deseja?')
+            .setPlaceholder('Ex: BRMODS 30d')
+            .setRequired(true)
+            .setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('details')
+            .setLabel('Observações adicionais (opcional)')
+            .setPlaceholder('Ex: Pretendo comprar hoje')
+            .setRequired(false)
+            .setStyle(TextInputStyle.Paragraph)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_public_request_stock') {
+    const productName = interaction.fields.getTextInputValue('product_name').trim();
+    const details = interaction.fields.getTextInputValue('details')?.trim() || 'Nenhuma';
+
+    const estoqueChId = db.config.channels?.solicitacaoEstoqueId || db.config.channels?.systemId;
+    if (estoqueChId) {
+      const ch = await client.channels.fetch(estoqueChId).catch(() => null);
+      if (ch) {
+        const embed = new EmbedBuilder()
+          .setColor('#F59E0B')
+          .setTitle('📦 Nova Solicitação de Estoque')
+          .setDescription(
+            `Logs › Solicitações de Estoque\n\n` +
+            `» **Membro:** <@${interaction.user.id}> (\`${interaction.user.tag}\`)\n` +
+            `» **Item Solicitado:** **${productName}**\n` +
+            `» **Observações:** \`${details}\`\n` +
+            `» **Horário:** <t:${Math.floor(Date.now() / 1000)}:F>`
+          )
+          .setThumbnail(interaction.user.displayAvatarURL())
+          .setFooter({ text: `${db.config.storeName} • Estoque` });
+
+        await ch.send({ embeds: [embed] }).catch(() => null);
+      }
+    }
+
+    return interaction.reply({
+      content: `✓ Sua solicitação de estoque para **${productName}** foi enviada à nossa equipe!`,
+      ephemeral: true
+    });
+  }
+
   return false;
 }
 

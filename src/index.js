@@ -497,6 +497,14 @@ client.on('interactionCreate', async (interaction) => {
 
     const handledByTicket = await handleTicketInteraction(interaction, client);
     if (handledByTicket !== false) return;
+
+    // Resposta de segurança absoluta para NUNCA estourar timeout de 3 segundos no Discord
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: '⚠️ Este menu ou botão expirou ou pertence a uma versão anterior do bot. Digite `/panel` para abrir um painel novo e atualizado!',
+        ephemeral: true
+      }).catch(() => null);
+    }
   } catch (err) {
     console.error('[Interaction Error]:', err);
     if (!interaction.replied && !interaction.deferred) {

@@ -263,6 +263,7 @@ function buildTicketPanelView(db) {
       .addOptions([
         { label: 'Configurar Aparência', value: 'tkt_cfg_appearance', description: 'Título, descrição, cor e banner' },
         { label: 'Adicionar Função', value: 'tkt_cfg_add_fn', description: 'Criar uma nova função de atendimento' },
+        { label: 'Gerenciar Funções', value: 'tkt_cfg_manage_fn', description: 'Editar lista de funções de atendimento' },
         { label: 'Modo de Abertura', value: 'tkt_cfg_open_mode', description: `Atual: ${tCfg.openMode || 'Thread Privada'}` },
         { label: 'Configurar Horários', value: 'tkt_cfg_schedule', description: `Horários (${tCfg.schedule || '24 horas'})` }
       ])
@@ -393,7 +394,6 @@ function buildAutomationsView(db) {
       `**Repostagem Automática de Produtos:**\n` +
       `» Status: \`${repost.enabled ? 'Ativado' : 'Desativado'}\`\n` +
       `» Intervalo: \`${repost.intervalMinutes || 180} minutos\` (ou Horários: \`${repost.fixedHours || '12:00, 18:00, 22:00'}\`)\n\n` +
-      `**Mensagens Automáticas:** \`${(a.autoMessages || []).length} cadastradas\`\n` +
       `**Auto-Role de Cliente na Compra:** \`${a.autoRoleCustomer ? 'Ativado' : 'Desativado'}\`\n` +
       `**Cancelamento de Carrinhos Inativos:** \`${a.autoCancelCartMinutes || 58} minutos\``
     );
@@ -404,7 +404,7 @@ function buildAutomationsView(db) {
   );
 
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('auto_create_message').setLabel('Nova Mensagem Automática').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('auto_toggle_role').setLabel('Alternar Cargo Automático').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('panel_back_main').setLabel('‹ Voltar').setStyle(ButtonStyle.Secondary)
   );
 
@@ -442,6 +442,47 @@ function buildZenCloudView(db) {
   );
 
   return { embeds: [embed], components: [row1, row2] };
+}
+
+function buildZenProtectView(db) {
+  const zp = db.config.zenProtect || {};
+  const embed = new EmbedBuilder()
+    .setColor('#EF4444')
+    .setTitle('zenProtect — Segurança & Anti-Raid')
+    .setDescription(
+      `Módulo de proteção ativa do servidor.\n\n` +
+      `▪ **Anti-Convites (Links Discord):** \`${zp.antiInvite ? 'Ativado' : 'Desativado'}\`\n` +
+      `▪ **Modo Anti-Raid (Bloqueio de Entradas):** \`${zp.raidMode ? 'Ativado' : 'Desativado'}\``
+    );
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('zp_toggle_invite').setLabel(zp.antiInvite ? 'Desativar Anti-Convites' : 'Ativar Anti-Convites').setStyle(zp.antiInvite ? ButtonStyle.Danger : ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('zp_toggle_raid').setLabel(zp.raidMode ? 'Desativar Anti-Raid' : 'Ativar Anti-Raid').setStyle(zp.raidMode ? ButtonStyle.Danger : ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('panel_back_main').setLabel('‹ Voltar').setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row] };
+}
+
+function buildWelcomeView(db) {
+  const w = db.config.welcome || {};
+  const embed = new EmbedBuilder()
+    .setColor('#7C3AED')
+    .setTitle('Sistema de Boas-Vindas')
+    .setDescription(
+      `Status: \`${w.enabled ? 'Ativado' : 'Desativado'}\`\n` +
+      `Canal: ${db.config.channels?.boasVindasId ? `<#${db.config.channels.boasVindasId}>` : '`Não configurado`'}\n` +
+      `Cargo ao Entrar: ${db.config.roles?.autoRoleId ? `<@&${db.config.roles.autoRoleId}>` : '`Não configurado`'}\n\n` +
+      `**Mensagem Atual:**\n${w.message || 'Olá {user}, seja bem-vindo(a) ao {server}!'}`
+    );
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('welcome_toggle').setLabel(w.enabled ? 'Desativar' : 'Ativar').setStyle(w.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('welcome_edit').setLabel('Editar Mensagem').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('panel_back_main').setLabel('‹ Voltar').setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row] };
 }
 
 /**
@@ -486,6 +527,38 @@ async function handlePanelInteraction(interaction, client) {
 
   if (interaction.isButton() && customId === 'panel_zencloud') {
     return interaction.update(buildZenCloudView(db));
+  }
+
+  if (interaction.isButton() && customId === 'panel_zenprotect') {
+    return interaction.update(buildZenProtectView(db));
+  }
+
+  if (interaction.isButton() && customId === 'panel_boas_vindas') {
+    return interaction.update(buildWelcomeView(db));
+  }
+
+  if (interaction.isButton() && customId === 'welcome_toggle') {
+    db.config.welcome.enabled = !db.config.welcome.enabled;
+    saveDB();
+    return interaction.update(buildWelcomeView(db));
+  }
+
+  if (interaction.isButton() && customId === 'welcome_edit') {
+    const modal = new ModalBuilder()
+      .setCustomId('modal_welcome_edit')
+      .setTitle('Editar Boas-Vindas')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('message').setLabel('Mensagem ({user} e {server})').setValue(db.config.welcome?.message || 'Olá {user}, bem-vindo(a) ao {server}!').setRequired(true).setStyle(TextInputStyle.Paragraph)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_welcome_edit') {
+    db.config.welcome.message = interaction.fields.getTextInputValue('message').trim();
+    saveDB();
+    return interaction.update(buildWelcomeView(db));
   }
 
   // 2. Customizar Bot / Loja
@@ -564,6 +637,74 @@ async function handlePanelInteraction(interaction, client) {
         )
       );
     return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_create_giveaway') {
+    const prize = interaction.fields.getTextInputValue('prize').trim();
+    const minutes = Math.max(1, parseInt(interaction.fields.getTextInputValue('minutes'), 10) || 60);
+    const endsAt = Date.now() + minutes * 60_000;
+    const gwId = `GW-${Date.now().toString(36).toUpperCase()}`;
+
+    const embed = new EmbedBuilder()
+      .setColor('#22C55E')
+      .setTitle(`🎉 SORTEIO: ${prize}`)
+      .setDescription(`Clique no botão **Participar** abaixo para concorrer!\n\n⏰ **Encerra:** <t:${Math.floor(endsAt / 1000)}:R>\n👤 **Criado por:** <@${interaction.user.id}>\n🎟️ **Participantes:** \`0\``)
+      .setFooter({ text: `ID: ${gwId}` });
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`gw_join:${gwId}`).setLabel('Participar (0)').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`gw_draw:${gwId}`).setLabel('Sortear Agora (Admin)').setStyle(ButtonStyle.Secondary)
+    );
+
+    const sent = await interaction.channel.send({ embeds: [embed], components: [row] });
+    db.giveaways[gwId] = {
+      id: gwId,
+      prize,
+      endsAt,
+      channelId: sent.channel.id,
+      messageId: sent.id,
+      participants: [],
+      ended: false
+    };
+    saveDB();
+    return interaction.reply({ content: `✓ Sorteio de **${prize}** publicado neste canal!`, ephemeral: true });
+  }
+
+  if (interaction.isButton() && customId.startsWith('gw_')) {
+    const [act, gwId] = customId.split(':');
+    const gw = db.giveaways[gwId];
+    if (!gw) return interaction.reply({ content: 'Sorteio não encontrado.', ephemeral: true });
+
+    if (act === 'gw_join') {
+      if (gw.ended) return interaction.reply({ content: 'Este sorteio já foi encerrado.', ephemeral: true });
+      if (gw.participants.includes(interaction.user.id)) {
+        return interaction.reply({ content: 'Você já está participando deste sorteio!', ephemeral: true });
+      }
+      gw.participants.push(interaction.user.id);
+      saveDB();
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`gw_join:${gwId}`).setLabel(`Participar (${gw.participants.length})`).setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`gw_draw:${gwId}`).setLabel('Sortear Agora (Admin)').setStyle(ButtonStyle.Secondary)
+      );
+      await interaction.message.edit({ components: [row] }).catch(() => null);
+      return interaction.reply({ content: '🎉 Participação confirmada!', ephemeral: true });
+    }
+
+    if (act === 'gw_draw') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: 'Apenas administradores podem sortear.', ephemeral: true });
+      }
+      gw.ended = true;
+      saveDB();
+      if (gw.participants.length === 0) {
+        return interaction.reply({ content: 'Sorteio encerrado sem participantes.' });
+      }
+      const winnerId = gw.participants[Math.floor(Math.random() * gw.participants.length)];
+      return interaction.reply({
+        content: `🎉 **SORTEIO ENCERRADO!**\n🏆 Prêmio: **${gw.prize}**\n👑 Ganhador(a): <@${winnerId}>! Parabéns!`
+      });
+    }
   }
 
   // 5. Configurar Auto para os 9 Canais
@@ -685,7 +826,7 @@ async function handlePanelInteraction(interaction, client) {
     });
   }
 
-  // 8. zenCloud Postar Painel
+  // 8. zenCloud Postar Painel & Credenciais
   if (interaction.isButton() && customId === 'zencloud_post_panel') {
     const baseUrl = (db.config.zenCloud.baseUrl || 'https://seu-bot.onrender.com').replace(/\/$/, '');
     const verifyUrl = `${baseUrl}/verify`;
@@ -706,6 +847,45 @@ async function handlePanelInteraction(interaction, client) {
 
     await interaction.channel.send({ embeds: [embed], components: [row] });
     return interaction.reply({ content: '✓ Painel de verificação postado neste canal!', ephemeral: true });
+  }
+
+  if (interaction.isButton() && customId === 'zencloud_cfg_credentials') {
+    const z = db.config.zenCloud;
+    const modal = new ModalBuilder()
+      .setCustomId('modal_zencloud_cfg')
+      .setTitle('Credenciais zenCloud OAuth2')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('client_id').setLabel('OAuth2 Client ID').setValue(z.oauthClientId || '').setRequired(false).setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('client_secret').setLabel('OAuth2 Client Secret').setValue(z.oauthClientSecret || '').setRequired(false).setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('auth_token').setLabel('Token do Bot de Auth (Opcional)').setValue(z.authBotToken || '').setRequired(false).setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('base_url').setLabel('URL Pública do seu Bot (Render)').setValue(z.baseUrl || '').setPlaceholder('https://seu-bot.onrender.com').setRequired(false).setStyle(TextInputStyle.Short)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_zencloud_cfg') {
+    db.config.zenCloud.oauthClientId = interaction.fields.getTextInputValue('client_id').trim();
+    db.config.zenCloud.oauthClientSecret = interaction.fields.getTextInputValue('client_secret').trim();
+    db.config.zenCloud.authBotToken = interaction.fields.getTextInputValue('auth_token').trim();
+    db.config.zenCloud.baseUrl = interaction.fields.getTextInputValue('base_url').trim();
+    saveDB();
+    return interaction.update(buildZenCloudView(db));
+  }
+
+  if (interaction.isButton() && customId === 'zencloud_pull_members') {
+    const verifiedUsers = db.config.zenCloud?.verifiedUsers || [];
+    return interaction.reply({
+      content: `ℹ️ O banco de dados possui **${verifiedUsers.length}** membros verificados prontos para backup.`,
+      ephemeral: true
+    });
   }
 
   // 9. Configurações de Banco / Chave PIX
@@ -737,7 +917,147 @@ async function handlePanelInteraction(interaction, client) {
     return interaction.reply({ content: '✓ Configurações bancárias salvas com sucesso!', ephemeral: true });
   }
 
-  // 10. Ações de Produtos
+  // 10. Criar Produto e Opções da Loja
+  if (interaction.isButton() && customId === 'store_create_product') {
+    const modal = new ModalBuilder()
+      .setCustomId('modal_create_product')
+      .setTitle('Criar Novo Produto')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('name').setLabel('Nome do Produto').setPlaceholder('Ex: BRMODS').setRequired(true).setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('description').setLabel('Descrição detalhada').setPlaceholder('Funções e detalhes do produto...').setRequired(true).setStyle(TextInputStyle.Paragraph)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('price').setLabel('Preço inicial (R$)').setValue('10.00').setRequired(true).setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('banner').setLabel('URL do Banner (Opcional)').setRequired(false).setStyle(TextInputStyle.Short)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_create_product') {
+    const name = interaction.fields.getTextInputValue('name').trim();
+    const description = interaction.fields.getTextInputValue('description').trim();
+    const price = parseFloat(interaction.fields.getTextInputValue('price').replace(',', '.')) || 10.0;
+    const banner = interaction.fields.getTextInputValue('banner').trim();
+
+    const id = slugify(name);
+    db.products[id] = {
+      id,
+      name,
+      description,
+      banner,
+      color: '#7C3AED',
+      autoDelivery: true,
+      fields: [
+        {
+          id: `${id}_24h`,
+          name: '24h - Diario',
+          days: 1,
+          featured: true,
+          price,
+          stock: []
+        }
+      ],
+      coupons: [],
+      publishedMessages: []
+    };
+    saveDB();
+    return interaction.update(buildProductDetailView(db.products[id], db));
+  }
+
+  if (interaction.isButton() && customId === 'store_out_of_stock') {
+    const outProducts = Object.values(db.products).filter((p) =>
+      !p.fields || p.fields.length === 0 || p.fields.some((f) => !f.stock || f.stock.length === 0)
+    );
+    const listText = outProducts.map((p) => {
+      const emptyFields = (p.fields || []).filter((f) => !f.stock || f.stock.length === 0).map((f) => f.name).join(', ');
+      return `• **${p.name}** (${emptyFields || 'Sem planos'})`;
+    }).join('\n') || '✓ Todos os produtos possuem estoque disponível!';
+
+    return interaction.reply({
+      embeds: [new EmbedBuilder().setColor('#EF4444').setTitle('📦 Produtos Sem Estoque').setDescription(listText)],
+      ephemeral: true
+    });
+  }
+
+  if (interaction.isStringSelectMenu() && customId === 'store_more_options') {
+    const choice = interaction.values[0];
+    if (choice === 'config_bank') {
+      const b = db.config.bank || {};
+      const modal = new ModalBuilder()
+        .setCustomId('modal_cfg_bank')
+        .setTitle('Configurar Pagamento PIX')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('pix_key').setLabel('Chave PIX').setValue(b.pixKey || '').setRequired(true).setStyle(TextInputStyle.Short)
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('holder').setLabel('Titular').setValue(b.pixHolderName || 'PRIME GROUP').setRequired(true).setStyle(TextInputStyle.Short)
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('mp_token').setLabel('Token Mercado Pago').setValue(b.mpAccessToken || '').setRequired(false).setStyle(TextInputStyle.Short)
+          )
+        );
+      return interaction.showModal(modal);
+    }
+    if (choice === 'mass_coupon') {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_mass_coupon')
+        .setTitle('Criar Cupom em Massa')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('code').setLabel('Código do Cupom').setPlaceholder('PRIME15').setRequired(true).setStyle(TextInputStyle.Short)
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('discount').setLabel('Porcentagem de Desconto (%)').setValue('15').setRequired(true).setStyle(TextInputStyle.Short)
+          )
+        );
+      return interaction.showModal(modal);
+    }
+    if (choice === 'post_saldo_panel') {
+      const embed = new EmbedBuilder()
+        .setColor('#22C55E')
+        .setTitle(`Carteira Digital • ${db.config.storeName}`)
+        .setDescription('Adicione saldo em sua carteira via **PIX** para realizar compras instantâneas!')
+        .setFooter({ text: db.config.storeName });
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('public_add_balance_btn').setLabel('Adicionar Saldo via PIX').setStyle(ButtonStyle.Success)
+      );
+      await interaction.channel.send({ embeds: [embed], components: [row] });
+      return interaction.reply({ content: '✓ Painel de saldo postado neste canal!', ephemeral: true });
+    }
+    if (choice === 'post_stock_req') {
+      const embed = new EmbedBuilder()
+        .setColor('#F59E0B')
+        .setTitle(`Solicitar Estoque • ${db.config.storeName}`)
+        .setDescription('O item que você queria acabou? Clique abaixo para avisar nossa equipe e pedir reposição!')
+        .setFooter({ text: db.config.storeName });
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('public_request_stock_btn').setLabel('Solicitar Estoque').setStyle(ButtonStyle.Primary)
+      );
+      await interaction.channel.send({ embeds: [embed], components: [row] });
+      return interaction.reply({ content: '✓ Painel de reposição de estoque postado!', ephemeral: true });
+    }
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_mass_coupon') {
+    const code = interaction.fields.getTextInputValue('code').trim().toUpperCase();
+    const discount = Math.min(99, Math.max(1, parseInt(interaction.fields.getTextInputValue('discount'), 10) || 10));
+    db.coupons[code] = { code, discountPercent: discount, createdAt: new Date().toISOString() };
+    for (const p of Object.values(db.products)) {
+      p.coupons = (p.coupons || []).filter((c) => c.code !== code);
+      p.coupons.push({ code, discountPercent: discount });
+    }
+    saveDB();
+    return interaction.reply({ content: `✓ Cupom global **${code}** (${discount}% OFF) criado!`, ephemeral: true });
+  }
+
+  // 11. Ações de Produtos
   if (interaction.isStringSelectMenu() && customId === 'store_select_product') {
     const prodId = interaction.values[0];
     const product = db.products[prodId];
@@ -756,6 +1076,221 @@ async function handlePanelInteraction(interaction, client) {
     const prodId = customId.split(':')[1];
     const product = db.products[prodId];
     if (!product) return interaction.reply({ content: 'Produto não encontrado.', ephemeral: true });
+    return interaction.update(buildManageFieldsView(product));
+  }
+
+  if (interaction.isButton() && customId.startsWith('prod_edit:')) {
+    const prodId = customId.split(':')[1];
+    const product = db.products[prodId];
+    if (!product) return interaction.reply({ content: 'Produto não encontrado.', ephemeral: true });
+
+    const modal = new ModalBuilder()
+      .setCustomId(`modal_prod_edit:${product.id}`)
+      .setTitle(`Editar — ${product.name.slice(0, 20)}`)
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('name').setLabel('Nome').setValue(product.name).setRequired(true).setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('description').setLabel('Descrição').setValue(product.description || '').setRequired(true).setStyle(TextInputStyle.Paragraph)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('banner').setLabel('Banner URL').setValue(product.banner || '').setRequired(false).setStyle(TextInputStyle.Short)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId.startsWith('modal_prod_edit:')) {
+    const prodId = customId.split(':')[1];
+    const product = db.products[prodId];
+    if (!product) return interaction.reply({ content: 'Produto não encontrado.', ephemeral: true });
+
+    product.name = interaction.fields.getTextInputValue('name').trim();
+    product.description = interaction.fields.getTextInputValue('description').trim();
+    product.banner = interaction.fields.getTextInputValue('banner').trim();
+    saveDB();
+    await syncProductMessages(client, product.id);
+    return interaction.update(buildProductDetailView(product, db));
+  }
+
+  if (interaction.isButton() && customId.startsWith('prod_coupons:')) {
+    const prodId = customId.split(':')[1];
+    const product = db.products[prodId];
+    if (!product) return interaction.reply({ content: 'Produto não encontrado.', ephemeral: true });
+
+    const modal = new ModalBuilder()
+      .setCustomId(`modal_prod_coupon:${product.id}`)
+      .setTitle(`Cupom — ${product.name.slice(0, 20)}`)
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('code').setLabel('Código do Cupom').setPlaceholder('PRIME10').setRequired(true).setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('discount').setLabel('Desconto (%)').setValue('10').setRequired(true).setStyle(TextInputStyle.Short)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId.startsWith('modal_prod_coupon:')) {
+    const prodId = customId.split(':')[1];
+    const product = db.products[prodId];
+    if (!product) return interaction.reply({ content: 'Produto não encontrado.', ephemeral: true });
+
+    const code = interaction.fields.getTextInputValue('code').trim().toUpperCase();
+    const discount = Math.min(99, Math.max(1, parseInt(interaction.fields.getTextInputValue('discount'), 10) || 10));
+
+    product.coupons = (product.coupons || []).filter((c) => c.code !== code);
+    product.coupons.push({ code, discountPercent: discount });
+    saveDB();
+    return interaction.update(buildProductDetailView(product, db));
+  }
+
+  if (interaction.isButton() && customId.startsWith('prod_delete:')) {
+    const prodId = customId.split(':')[1];
+    delete db.products[prodId];
+    saveDB();
+    return interaction.update(buildProductListView(db));
+  }
+
+  if (interaction.isButton() && customId.startsWith('field_add:')) {
+    const prodId = customId.split(':')[1];
+    const modal = new ModalBuilder()
+      .setCustomId(`modal_field_add:${prodId}`)
+      .setTitle('Adicionar Plano')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('name').setLabel('Nome do Plano (ex: 30d - Mensal)').setRequired(true).setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('price').setLabel('Preço (R$)').setPlaceholder('50.00').setRequired(true).setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('stock').setLabel('Estoque Inicial (1 item por linha)').setRequired(false).setStyle(TextInputStyle.Paragraph)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId.startsWith('modal_field_add:')) {
+    const prodId = customId.split(':')[1];
+    const product = db.products[prodId];
+    if (!product) return interaction.reply({ content: 'Produto não encontrado.', ephemeral: true });
+
+    const name = interaction.fields.getTextInputValue('name').trim();
+    const price = parseFloat(interaction.fields.getTextInputValue('price').replace(',', '.')) || 10.0;
+    const rawStock = interaction.fields.getTextInputValue('stock') || '';
+    const stockItems = rawStock.split('\n').map((s) => s.trim()).filter(Boolean);
+
+    product.fields.push({
+      id: slugify(`${name}_${Date.now().toString(36).slice(-3)}`),
+      name,
+      price,
+      stock: stockItems
+    });
+    saveDB();
+    await syncProductMessages(client, product.id);
+    return interaction.update(buildManageFieldsView(product));
+  }
+
+  if (interaction.isStringSelectMenu() && customId.startsWith('field_select:')) {
+    const prodId = customId.split(':')[1];
+    const fieldId = interaction.values[0];
+    const product = db.products[prodId];
+    const field = product?.fields?.find((f) => f.id === fieldId);
+    if (!product || !field) return interaction.reply({ content: 'Plano não encontrado.', ephemeral: true });
+
+    const embed = new EmbedBuilder()
+      .setColor('#7C3AED')
+      .setTitle(`Plano: ${field.name}`)
+      .setDescription(`Preço: \`${formatBRL(field.price)}\`\nEstoque Atual: \`${field.stock?.length || 0} unidades\``);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`fitem_stock:${product.id}:${field.id}`).setLabel('Abastecer Estoque').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`fitem_edit:${product.id}:${field.id}`).setLabel('Editar Preço').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`fitem_del:${product.id}:${field.id}`).setLabel('Excluir').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`prod_fields:${product.id}`).setLabel('‹ Voltar').setStyle(ButtonStyle.Secondary)
+    );
+
+    return interaction.update({ embeds: [embed], components: [row] });
+  }
+
+  if (interaction.isButton() && customId.startsWith('fitem_stock:')) {
+    const [, prodId, fieldId] = customId.split(':');
+    const product = db.products[prodId];
+    const field = product?.fields?.find((f) => f.id === fieldId);
+    if (!field) return interaction.reply({ content: 'Plano não encontrado.', ephemeral: true });
+
+    const modal = new ModalBuilder()
+      .setCustomId(`modal_fitem_stock:${prodId}:${fieldId}`)
+      .setTitle(`Estoque — ${field.name.slice(0, 20)}`)
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('stock_lines')
+            .setLabel('Itens (1 key/conta por linha)')
+            .setValue((field.stock || []).join('\n').slice(0, 3900))
+            .setRequired(false)
+            .setStyle(TextInputStyle.Paragraph)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId.startsWith('modal_fitem_stock:')) {
+    const [, prodId, fieldId] = customId.split(':');
+    const product = db.products[prodId];
+    const field = product?.fields?.find((f) => f.id === fieldId);
+    if (!field) return interaction.reply({ content: 'Plano não encontrado.', ephemeral: true });
+
+    const lines = interaction.fields.getTextInputValue('stock_lines') || '';
+    field.stock = lines.split('\n').map((s) => s.trim()).filter(Boolean);
+    saveDB();
+    await syncProductMessages(client, product.id);
+    return interaction.update(buildProductDetailView(product, db));
+  }
+
+  if (interaction.isButton() && customId.startsWith('fitem_edit:')) {
+    const [, prodId, fieldId] = customId.split(':');
+    const product = db.products[prodId];
+    const field = product?.fields?.find((f) => f.id === fieldId);
+    if (!field) return interaction.reply({ content: 'Plano não encontrado.', ephemeral: true });
+
+    const modal = new ModalBuilder()
+      .setCustomId(`modal_fitem_edit:${prodId}:${fieldId}`)
+      .setTitle('Editar Preço do Plano')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('name').setLabel('Nome').setValue(field.name).setRequired(true).setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('price').setLabel('Preço (R$)').setValue(String(field.price)).setRequired(true).setStyle(TextInputStyle.Short)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId.startsWith('modal_fitem_edit:')) {
+    const [, prodId, fieldId] = customId.split(':');
+    const product = db.products[prodId];
+    const field = product?.fields?.find((f) => f.id === fieldId);
+    if (!field) return interaction.reply({ content: 'Plano não encontrado.', ephemeral: true });
+
+    field.name = interaction.fields.getTextInputValue('name').trim();
+    field.price = parseFloat(interaction.fields.getTextInputValue('price').replace(',', '.')) || field.price;
+    saveDB();
+    await syncProductMessages(client, product.id);
+    return interaction.update(buildManageFieldsView(product));
+  }
+
+  if (interaction.isButton() && customId.startsWith('fitem_del:')) {
+    const [, prodId, fieldId] = customId.split(':');
+    const product = db.products[prodId];
+    if (!product) return interaction.reply({ content: 'Produto não encontrado.', ephemeral: true });
+    product.fields = (product.fields || []).filter((f) => f.id !== fieldId);
+    saveDB();
+    await syncProductMessages(client, product.id);
     return interaction.update(buildManageFieldsView(product));
   }
 
@@ -784,6 +1319,172 @@ async function handlePanelInteraction(interaction, client) {
       content: `✓ Sincronização concluída! **${count}** mensagem(ns) deste produto foram atualizadas.`,
       ephemeral: true
     });
+  }
+
+  // 12. Configuração de Tickets
+  if (interaction.isStringSelectMenu() && customId === 'ticket_config_select') {
+    const opt = interaction.values[0];
+
+    if (opt === 'tkt_cfg_open_mode') {
+      db.tickets.config.openMode =
+        db.tickets.config.openMode === 'Thread Privada' ? 'Canal Privado' : 'Thread Privada';
+      saveDB();
+      return interaction.update(buildTicketPanelView(db));
+    }
+
+    if (opt === 'tkt_cfg_appearance') {
+      const tCfg = db.tickets.config;
+      const modal = new ModalBuilder()
+        .setCustomId('modal_tkt_appearance')
+        .setTitle('Aparência dos Tickets')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('title').setLabel('Título').setValue(tCfg.title || 'Central de Atendimento').setRequired(true).setStyle(TextInputStyle.Short)
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('description').setLabel('Descrição').setValue(tCfg.description || '').setRequired(true).setStyle(TextInputStyle.Paragraph)
+          )
+        );
+      return interaction.showModal(modal);
+    }
+
+    if (opt === 'tkt_cfg_add_fn') {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_tkt_add_fn')
+        .setTitle('Nova Função de Atendimento')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('name').setLabel('Nome (ex: Financeiro, Suporte)').setRequired(true).setStyle(TextInputStyle.Short)
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('desc').setLabel('Descrição curta').setRequired(false).setStyle(TextInputStyle.Short)
+          )
+        );
+      return interaction.showModal(modal);
+    }
+
+    if (opt === 'tkt_cfg_manage_fn') {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_tkt_manage_fn')
+        .setTitle('Funções (1 por linha)')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('lines')
+              .setLabel('Nomes das Funções (1 por linha)')
+              .setValue((db.tickets.config.functions || []).map((f) => f.name).join('\n'))
+              .setRequired(true)
+              .setStyle(TextInputStyle.Paragraph)
+          )
+        );
+      return interaction.showModal(modal);
+    }
+
+    if (opt === 'tkt_cfg_schedule') {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_tkt_schedule')
+        .setTitle('Horários de Atendimento')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('schedule').setLabel('Horário').setValue(db.tickets.config.schedule || '24 horas').setRequired(true).setStyle(TextInputStyle.Short)
+          )
+        );
+      return interaction.showModal(modal);
+    }
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_tkt_appearance') {
+    db.tickets.config.title = interaction.fields.getTextInputValue('title').trim();
+    db.tickets.config.description = interaction.fields.getTextInputValue('description').trim();
+    saveDB();
+    return interaction.update(buildTicketPanelView(db));
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_tkt_add_fn') {
+    const name = interaction.fields.getTextInputValue('name').trim();
+    const desc = interaction.fields.getTextInputValue('desc').trim() || `Atendimento: ${name}`;
+    db.tickets.config.functions.push({ id: slugify(name), name, description: desc });
+    saveDB();
+    return interaction.update(buildTicketPanelView(db));
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_tkt_manage_fn') {
+    const lines = interaction.fields.getTextInputValue('lines').split('\n').map((s) => s.trim()).filter(Boolean);
+    db.tickets.config.functions = lines.map((name) => ({ id: slugify(name), name, description: `Atendimento: ${name}` }));
+    saveDB();
+    return interaction.update(buildTicketPanelView(db));
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_tkt_schedule') {
+    db.tickets.config.schedule = interaction.fields.getTextInputValue('schedule').trim();
+    saveDB();
+    return interaction.update(buildTicketPanelView(db));
+  }
+
+  if (interaction.isButton() && customId === 'tkt_panel_post') {
+    const payload = buildPublicTicketMessage(db);
+    const sent = await interaction.channel.send(payload);
+    db.tickets.config.publishedMessages = db.tickets.config.publishedMessages || [];
+    db.tickets.config.publishedMessages.push({ channelId: sent.channel.id, messageId: sent.id });
+    saveDB();
+    return interaction.reply({ content: '✓ Painel de Tickets publicado neste canal!', ephemeral: true });
+  }
+
+  if (interaction.isButton() && customId === 'tkt_panel_sync') {
+    const count = await syncTicketMessages(client);
+    return interaction.reply({ content: `✓ **${count}** mensagem(ns) de ticket sincronizada(s)!`, ephemeral: true });
+  }
+
+  // 13. zenProtect
+  if (interaction.isButton() && customId === 'zp_toggle_invite') {
+    db.config.zenProtect.antiInvite = !db.config.zenProtect.antiInvite;
+    saveDB();
+    return interaction.update(buildZenProtectView(db));
+  }
+
+  if (interaction.isButton() && customId === 'zp_toggle_raid') {
+    db.config.zenProtect.raidMode = !db.config.zenProtect.raidMode;
+    saveDB();
+    return interaction.update(buildZenProtectView(db));
+  }
+
+  // 14. Automações
+  if (interaction.isButton() && customId === 'auto_toggle_repost') {
+    db.config.automations.productRepost.enabled = !db.config.automations.productRepost.enabled;
+    saveDB();
+    return interaction.update(buildAutomationsView(db));
+  }
+
+  if (interaction.isButton() && customId === 'auto_toggle_role') {
+    db.config.automations.autoRoleCustomer = !db.config.automations.autoRoleCustomer;
+    saveDB();
+    return interaction.update(buildAutomationsView(db));
+  }
+
+  if (interaction.isButton() && customId === 'auto_cfg_repost') {
+    const repost = db.config.automations.productRepost;
+    const modal = new ModalBuilder()
+      .setCustomId('modal_cfg_repost')
+      .setTitle('Configurar Repostagem')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('interval').setLabel('Intervalo em Minutos').setValue(String(repost.intervalMinutes || 180)).setRequired(true).setStyle(TextInputStyle.Short)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('hours').setLabel('Horários Fixos (ex: 12:00, 18:00)').setValue(repost.fixedHours || '12:00, 18:00, 22:00').setRequired(false).setStyle(TextInputStyle.Short)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_cfg_repost') {
+    const interval = parseInt(interaction.fields.getTextInputValue('interval'), 10) || 180;
+    const hours = interaction.fields.getTextInputValue('hours').trim();
+    db.config.automations.productRepost.intervalMinutes = interval;
+    db.config.automations.productRepost.fixedHours = hours;
+    db.config.automations.productRepost.enabled = true;
+    saveDB();
+    return interaction.update(buildAutomationsView(db));
   }
 
   return false;
