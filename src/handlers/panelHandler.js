@@ -21,7 +21,8 @@ const {
   listBackups,
   restoreBackup,
   formatBRL,
-  slugify
+  slugify,
+  getAllowedGuilds
 } = require('../utils/database');
 const { buildProductSaleMessage, syncProductMessages } = require('./storeHandler');
 const { buildPublicTicketMessage, syncTicketMessages } = require('./ticketHandler');
@@ -286,7 +287,7 @@ function buildConfigPanelView(db) {
     .setColor('#1E2330')
     .setTitle('Configurações Gerais')
     .setDescription(
-      'Configure os cargos, canais de logs automatizados e dados bancários do servidor.\n' +
+      'Configure os cargos, canais de logs automatizados, dados bancários e servidores autorizados.\n' +
       'Selecione uma das opções abaixo.'
     );
 
@@ -297,7 +298,37 @@ function buildConfigPanelView(db) {
   );
 
   const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cfg_servers_view').setLabel('Servidores Autorizados').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('panel_back_main').setLabel('‹ Voltar').setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row1, row2] };
+}
+
+function buildServersConfigView(db, client) {
+  const allowed = getAllowedGuilds(db);
+  const allowedListStr = allowed.map((id) => {
+    const g = client?.guilds?.cache?.get(id);
+    return `• \`${id}\` — ${g ? `🟢 **${g.name}**` : '⚪ Autorizado (Aguardando convite)'}`;
+  }).join('\n') || '*Nenhum servidor específico listado (modo aberto).*';
+
+  const embed = new EmbedBuilder()
+    .setColor('#7C3AED')
+    .setTitle('🛡️ Servidores Autorizados (Bot Privado)')
+    .setDescription(
+      `Quando o modo privado está ativo, o bot **automaticamente sai** de qualquer servidor que não esteja nesta lista.\n\n` +
+      `▪ **Modo Privado:** \`${db.config.isPrivate ? 'Ativado (Protegido)' : 'Desativado (Público)'}\`\n\n` +
+      `**Lista de Servidores Permitidos:**\n${allowedListStr}`
+    )
+    .setFooter({ text: `${db.config.storeName} • Multi-Servidor` });
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cfg_servers_add').setLabel('Adicionar Servidor').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('cfg_servers_toggle_privacy').setLabel(db.config.isPrivate ? 'Desativar Modo Privado' : 'Ativar Modo Privado').setStyle(db.config.isPrivate ? ButtonStyle.Danger : ButtonStyle.Primary)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panel_configuracoes').setLabel('‹ Voltar').setStyle(ButtonStyle.Secondary)
   );
 
   return { embeds: [embed], components: [row1, row2] };
@@ -519,6 +550,46 @@ async function handlePanelInteraction(interaction, client) {
 
   if (interaction.isButton() && customId === 'cfg_channels_view') {
     return interaction.update(buildChannelsConfigView(db));
+  }
+
+  if (interaction.isButton() && customId === 'cfg_servers_view') {
+    return interaction.update(buildServersConfigView(db, client));
+  }
+
+  if (interaction.isButton() && customId === 'cfg_servers_toggle_privacy') {
+    db.config.isPrivate = !db.config.isPrivate;
+    saveDB();
+    return interaction.update(buildServersConfigView(db, client));
+  }
+
+  if (interaction.isButton() && customId === 'cfg_servers_add') {
+    const modal = new ModalBuilder()
+      .setCustomId('modal_cfg_servers_add')
+      .setTitle('Autorizar Novo Servidor')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('guild_id')
+            .setLabel('ID do Servidor (Guild ID)')
+            .setPlaceholder('Ex: 1561082680496365579')
+            .setRequired(true)
+            .setStyle(TextInputStyle.Short)
+        )
+      );
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && customId === 'modal_cfg_servers_add') {
+    const newId = interaction.fields.getTextInputValue('guild_id').trim();
+    if (!/^\d{17,20}$/.test(newId)) {
+      return interaction.reply({ content: 'ID de servidor inválido. Copie os dígitos numéricos do ID do servidor no Discord.', ephemeral: true });
+    }
+    if (!Array.isArray(db.config.allowedGuildIds)) db.config.allowedGuildIds = [];
+    if (!db.config.allowedGuildIds.includes(newId)) {
+      db.config.allowedGuildIds.push(newId);
+    }
+    saveDB();
+    return interaction.update(buildServersConfigView(db, client));
   }
 
   if (interaction.isButton() && customId === 'panel_automacoes') {

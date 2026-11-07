@@ -16,6 +16,7 @@ const DEFAULT_DB = {
     storeBanner: '',
     isPrivate: true,
     allowedGuildId: '',
+    allowedGuildIds: [],
     presence: {
       status: 'online', // 'online' | 'idle' | 'dnd'
       activityType: 0, // 0: Playing, 1: Streaming, 2: Listening, 3: Watching, 5: Competing
@@ -386,6 +387,45 @@ function slugify(str) {
     .replace(/^_|_$/g, '') || `item_${Date.now()}`;
 }
 
+function isGuildAuthorized(guildId, db) {
+  if (!db || !db.config) return true;
+  if (db.config.isPrivate === false) return true;
+
+  const allowedList = new Set();
+  if (db.config.allowedGuildId) {
+    allowedList.add(String(db.config.allowedGuildId).trim());
+  }
+  if (Array.isArray(db.config.allowedGuildIds)) {
+    db.config.allowedGuildIds.forEach((id) => {
+      if (id) allowedList.add(String(id).trim());
+    });
+  }
+  if (process.env.GUILD_ID) {
+    process.env.GUILD_ID.split(',').forEach((id) => {
+      if (id.trim()) allowedList.add(id.trim());
+    });
+  }
+
+  if (allowedList.size === 0) return true;
+  return allowedList.has(String(guildId).trim());
+}
+
+function getAllowedGuilds(db) {
+  const allowedList = new Set();
+  if (db.config.allowedGuildId) allowedList.add(String(db.config.allowedGuildId).trim());
+  if (Array.isArray(db.config.allowedGuildIds)) {
+    db.config.allowedGuildIds.forEach((id) => {
+      if (id) allowedList.add(String(id).trim());
+    });
+  }
+  if (process.env.GUILD_ID) {
+    process.env.GUILD_ID.split(',').forEach((id) => {
+      if (id.trim()) allowedList.add(id.trim());
+    });
+  }
+  return Array.from(allowedList);
+}
+
 module.exports = {
   loadDB,
   saveDB,
@@ -395,5 +435,7 @@ module.exports = {
   getUser,
   recalculateBadges,
   formatBRL,
-  slugify
+  slugify,
+  isGuildAuthorized,
+  getAllowedGuilds
 };

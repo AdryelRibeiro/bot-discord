@@ -14,7 +14,7 @@ const {
   PermissionFlagsBits
 } = require('discord.js');
 
-const { loadDB, saveDB, getUser, formatBRL } = require('./utils/database');
+const { loadDB, saveDB, getUser, formatBRL, isGuildAuthorized } = require('./utils/database');
 const { commandsList, handleSlashCommand } = require('./commands/slashCommands');
 const { handlePanelInteraction } = require('./handlers/panelHandler');
 const { handleStoreInteraction, buildProductSaleMessage } = require('./handlers/storeHandler');
@@ -160,20 +160,19 @@ client.once('ready', async () => {
 // ============================================================================
 client.on('guildCreate', async (guild) => {
   const db = loadDB();
-  if (db.config.isPrivate) {
-    const allowed = db.config.allowedGuildId || process.env.GUILD_ID;
-    if (allowed && guild.id !== allowed) {
-      console.warn(`[Privado] Bot adicionado no servidor não autorizado: ${guild.name} (${guild.id}). Saindo...`);
-      try {
-        const defCh = guild.systemChannel || guild.channels.cache.find((c) => c.isTextBased() && c.permissionsFor(guild.members.me)?.has('SendMessages'));
-        if (defCh) {
-          await defCh.send('🔒 Este bot é de uso estritamente privado do **Prime Group** e não tem permissão para operar neste servidor.').catch(() => null);
-        }
-      } catch {
-        //
+  if (!isGuildAuthorized(guild.id, db)) {
+    console.warn(`[Privado] Bot adicionado no servidor não autorizado: ${guild.name} (${guild.id}). Saindo...`);
+    try {
+      const defCh = guild.systemChannel || guild.channels.cache.find((c) => c.isTextBased() && c.permissionsFor(guild.members.me)?.has('SendMessages'));
+      if (defCh) {
+        await defCh.send('🔒 Este bot é de uso estritamente privado do **Prime Group** e não tem permissão para operar neste servidor.\nPeça para o proprietário autorizar este servidor com `/autorizar_servidor`.').catch(() => null);
       }
-      await guild.leave().catch(() => null);
+    } catch {
+      //
     }
+    await guild.leave().catch(() => null);
+  } else {
+    console.log(`[Servidor Autorizado] Bot entrou no servidor: ${guild.name} (${guild.id})!`);
   }
 });
 

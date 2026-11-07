@@ -14,7 +14,9 @@ const {
   getUser,
   recalculateBadges,
   formatBRL,
-  slugify
+  slugify,
+  isGuildAuthorized,
+  getAllowedGuilds
 } = require('../utils/database');
 const { createPaymentCharge } = require('../utils/pix');
 const {
@@ -31,6 +33,20 @@ const commandsList = [
   new SlashCommandBuilder()
     .setName('panel')
     .setDescription('[⚡ Admin] Use para abrir o painel de controle'),
+
+  new SlashCommandBuilder()
+    .setName('autorizar_servidor')
+    .setDescription('[⚡ Admin] Autoriza um novo servidor Discord para usar o bot privado')
+    .addStringOption((o) => o.setName('id').setDescription('ID do servidor (Guild ID)').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('desautorizar_servidor')
+    .setDescription('[⚡ Admin] Remove a autorização de um servidor')
+    .addStringOption((o) => o.setName('id').setDescription('ID do servidor (Guild ID)').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('listar_servidores')
+    .setDescription('[⚡ Admin] Lista todos os servidores autorizados e status do bot'),
 
   new SlashCommandBuilder()
     .setName('add_ticket')
@@ -354,14 +370,11 @@ async function handleSlashCommand(interaction, client) {
   const cmd = interaction.commandName;
 
   // Verificação de Bot Privado (se ativado, só responde no servidor autorizado)
-  if (db.config.isPrivate) {
-    const allowed = db.config.allowedGuildId || process.env.GUILD_ID;
-    if (allowed && interaction.guildId !== allowed) {
-      return interaction.reply({
-        content: '🔒 Este bot é de uso privado do **Prime Group** e não está autorizado neste servidor.',
-        ephemeral: true
-      });
-    }
+  if (!isGuildAuthorized(interaction.guildId, db)) {
+    return interaction.reply({
+      content: '🔒 Este bot é de uso estritamente privado do **Prime Group** e não está autorizado neste servidor.\nPeça para o proprietário autorizar este servidor usando `/autorizar_servidor`.',
+      ephemeral: true
+    });
   }
 
   // Comandos públicos de usuário
@@ -376,6 +389,77 @@ async function handleSlashCommand(interaction, client) {
   switch (cmd) {
     case 'panel': {
       return interaction.reply({ ...buildMainPanelView(db), ephemeral: true });
+    }
+
+    case 'autorizar_servidor': {
+      const targetId = interaction.options.getString('id').trim();
+      if (!/^\d{17,20}$/.test(targetId)) {
+        return interaction.reply({ content: '❌ Por favor, informe um ID de servidor válido (17 a 20 dígitos numéricos).', ephemeral: true });
+      }
+
+      if (!Array.isArray(db.config.allowedGuildIds)) {
+        db.config.allowedGuildIds = [];
+      }
+      if (!db.config.allowedGuildIds.includes(targetId)) {
+        db.config.allowedGuildIds.push(targetId);
+      }
+      saveDB();
+
+      const embed = new EmbedBuilder()
+        .setColor('#22C55E')
+        .setTitle('✅ Servidor Autorizado')
+        .setDescription(
+          `O servidor de ID \`${targetId}\` agora está autorizado a usar o bot!\n\n` +
+          `**Próximos passos:**\n` +
+          `1. Convide o bot para esse servidor com permissão de Administrador.\n` +
+          `2. O bot não sairá mais automaticamente desse servidor.\n` +
+          `3. Você poderá usar o \`/panel\` lá normalmente!`
+        )
+        .setFooter({ text: `${db.config.storeName} • Segurança` });
+
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    case 'desautorizar_servidor': {
+      const targetId = interaction.options.getString('id').trim();
+      if (Array.isArray(db.config.allowedGuildIds)) {
+        db.config.allowedGuildIds = db.config.allowedGuildIds.filter((id) => id !== targetId);
+      }
+      if (db.config.allowedGuildId === targetId) {
+        db.config.allowedGuildId = '';
+      }
+      saveDB();
+
+      const targetGuild = client.guilds.cache.get(targetId);
+      if (targetGuild) {
+        await targetGuild.leave().catch(() => null);
+      }
+
+      return interaction.reply({
+        content: `✓ O servidor \`${targetId}\` foi desautorizado e removido da lista segura.`,
+        ephemeral: true
+      });
+    }
+
+    case 'listar_servidores': {
+      const allowed = getAllowedGuilds(db);
+      const connectedGuilds = client.guilds.cache.map((g) => `▪ **${g.name}** (\`${g.id}\`) — ${g.memberCount} membros`).join('\n') || '*Nenhum servidor conectado.*';
+      const allowedListStr = allowed.map((id) => {
+        const g = client.guilds.cache.get(id);
+        return `• \`${id}\` — ${g ? `🟢 **${g.name}** (Conectado)` : '⚪ Autorizado (Aguardando convite)'}`;
+      }).join('\n') || '*Nenhum servidor específico na whitelist (modo aberto).*';
+
+      const embed = new EmbedBuilder()
+        .setColor('#7C3AED')
+        .setTitle('🛡️ Gestão de Servidores Autorizados')
+        .setDescription(
+          `**Status de Privacidade:** \`${db.config.isPrivate ? 'Privado (Somente Autorizados)' : 'Público'}\`\n\n` +
+          `**Servidores Autorizados (${allowed.length}):**\n${allowedListStr}\n\n` +
+          `**Servidores Onde o Bot Está Presente:**\n${connectedGuilds}`
+        )
+        .setFooter({ text: `${db.config.storeName} • Multi-Servidor` });
+
+      return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     case 'ajuda': {
